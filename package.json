@@ -2,10 +2,7 @@
   "name": "yaap",
   "version": "0.1.0",
   "description": "yet another argument parser",
-  "main": "index.js",
-  "scripts": {
-    "test": "false"
-  },
+  "main": "src/index.js",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/cosmicexplorer/yaap.git"
@@ -29,6 +26,8 @@
   },
   "homepage": "https://github.com/cosmicexplorer/yaap#readme",
   "devDependencies": {
-    "coffeescript": "^2.0.0-beta4"
+    "coffeescript": "^2.0.0-beta4",
+    "mocha": "^3.5.0",
+    "should": "^11.2.1"
   }
 }
