@@ -1,0 +1,31 @@
+{
+  "name": "yaap",
+  "version": "0.1.0",
+  "description": "yet another argument parser",
+  "main": "index.js",
+  "scripts": {
+    "test": "false"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/cosmicexplorer/yaap.git"
+  },
+  "keywords": [
+    "argparse",
+    "argument",
+    "parser",
+    "parsing",
+    "getopt",
+    "option",
+    "optparse",
+    "argv",
+    "command",
+    "line"
+  ],
+  "author": "Danny McClanahan <danieldmcclanahan@gmail.com>",
+  "license": "GPL-3.0+",
+  "bugs": {
+    "url": "https://github.com/cosmicexplorer/yaap/issues"
+  },
+  "homepage": "https://github.com/cosmicexplorer/yaap#readme"
+}
