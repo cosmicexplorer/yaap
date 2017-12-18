@@ -14,14 +14,48 @@ COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*
 
 argv = process.argv[2..]
 
-user_short_switches = new Set [
-  'a'
-  'c'
+Arguments = [
+  'asdf'
+  'bbbc'
+  'wwer'
 ]
 
-user_long_switches = new Set [
-  'asdf'
+Switches = [
+  'verbose'
+  'quiet'
 ]
+
+class OverlappingShortFormKeywordArgsError extends Error
+  constructor: (argSetDescription, argArr, firstLong, secondLong) ->
+    shortArg = firstLong[0]
+
+    super "The given '#{argSetDescription}' array has two long form options
+    '--#{firstLong}' and '--#{secondLong}', which share the same first letter
+    '#{shortArg}'. This program uses the first letter of a long-form argument
+    (e.g. '--#{firstLong}') to form the short-form of the argument
+    '-#{shortArg}', so '--#{firstLong}' and '--#{secondLong}' cannot be used
+    together. This is a bug.\n\nThe full array is: #{JSON.stringify(argArr)}."
+
+hitShortKwargs = new Map
+for arg in Arguments
+  shortArg = arg[0]
+  prevShort = hitShortKwargs.get(shortArg)
+  if prevShort?
+    throw new OverlappingShortFormKeywordArgsError 'Arguments', Arguments, prevShort, arg
+  else
+    hitShortKwargs.set(shortArg, arg)
+
+hitShortSwitches = new Map
+for arg in Switches
+  shortSwitch = arg[0]
+  prevShortSwitch = hitShortSwitches.get(shortSwitch)
+  if prevShortSwitch?
+    throw new OverlappingShortFormKeywordArgsError 'Switches', Switches, prevShortSwitch, arg
+  else
+    hitShortSwitches.set(shortSwitch, arg)
+
+userShortSwitches = new Set hitShortSwitches.keys()
+userLongSwitches = new Set hitShortSwitches.values()
 
 args = []
 kwargs = {}
@@ -76,7 +110,7 @@ for arg, i in argv
   longArg = arg.match ///^--(#{longArgToken})$///
   if longArg?
     [_, argName] = longArg
-    if user_long_switches.has(argName)
+    if userLongSwitches.has(argName)
       longSwitches.push argName
     else
       previousLongArgName = argName
@@ -87,11 +121,11 @@ for arg, i in argv
     [_, shortArguments] = shortArg
     [switchArgs..., maybeSwitchArg] = shortArguments.split ''
     for argName in switchArgs
-      if user_short_switches.has argName
+      if userShortSwitches.has argName
         shortSwitches.push argName
       else
         throw new CombinedShortOptionsValueError shortArguments, argName
-    if user_short_switches.has maybeSwitchArg
+    if userShortSwitches.has maybeSwitchArg
       shortSwitches.push maybeSwitchArg
     else
       previousShortArgName = maybeSwitchArg
