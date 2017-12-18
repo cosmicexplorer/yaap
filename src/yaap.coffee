@@ -12,26 +12,33 @@ COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*
 
 ###
 
-# short_switches = [
-#   'a'
-#   'c'
-# ]
+user_short_switches = new Set [
+  'a'
+  'c'
+]
 
-# long_switches = [
-#   'asdf'
-# ]
+user_long_switches = new Set [
+  'asdf'
+]
 
 args = []
 kwargs = {}
-# shortSwitches = []
-# longSwitches = []
+shortSwitches = []
+longSwitches = []
 
+previousLongArgName = null
 previousShortArgName = null
 
 argv = process.argv[2..]
 
-# shortToken = /[a-zA-Z]/
-# longToken = /[a-zA-Z][a-zA-Z_-]+/
+shortToken = '[a-zA-Z]'
+longToken = '[a-zA-Z][a-zA-Z_-]*'
+
+throwOnAccidentalOption = no
+
+accidentalArgErrMsg = (argWithDashes) ->
+  "The argument '#{argWithDashes}' looks like a keyword argument, but isn't
+  recognized "
 
 for arg, i in argv
   if previousShortArgName?
@@ -39,21 +46,41 @@ for arg, i in argv
     previousShortArgName = null
     continue
 
-  longKwArg = arg.match /^--([a-zA-Z][a-zA-Z_-]*)=(.*)$/
-  if longKwArg?
-    [_, argName, argValue] = longKwArg
+  if previousLongArgName?
+    kwargs[previousLongArgName] = arg
+    previousLongArgName = null
+    continue
+
+  longArgWithValue = arg.match ///^--(#{longToken})=(.*)$///
+  if longArgWithValue?
+    [_, argName, argValue] = longArgWithValue
     kwargs[argName] = argValue
     continue
 
-  # longSwitch = arg.match /^--(#{})$/
-  # if longSwitch?
-  #   [_, argName]
-
-  shortKwArg = arg.match /^-([a-zA-Z])$/
-  if shortKwArg?
-    [_, argName] = shortKwArg
-    previousShortArgName = argName
+  longArg = arg.match ///^--(#{longToken})$///
+  if longArg?
+    [_, argName] = longArg
+    if user_long_switches.has(argName)
+      longSwitches.push argName
+    else
+      previousLongArgName = argName
     continue
+
+  # TODO: split combined short args (e.g. -uno)
+  shortArg = arg.match ///^-(#{shortToken})$///
+  if shortArg?
+    [_, argName] = shortArg
+    console.log "argName: #{argName}"
+    if user_short_switches.has argName
+      shortSwitches.push argName
+    else
+      previousShortArgName = argName
+    continue
+
+  accidentalArg = arg.match ///^-///
+  if accidentalArg?
+    # TODO: finish this -- does this make sense if we split combined short args?
+    # throw new Error
 
   if arg is '--'
     args = argv[i+1..]
@@ -62,10 +89,16 @@ for arg, i in argv
     args = argv[i..]
     break
 
+previousArgErrMsg = (argWithDashes) ->
+  "The last argument '#{argWithDashes}' requires a value after it in the
+  argument list. If you meant to use this option, please provide an appropriate
+  value (e.g. '#{argWithDashes} value')."
+
 if previousShortArgName?
-  throw new Error "The last argument '-#{previousShortArgName}' requires a
-  value after it in the argument list. If you meant to use this option, please
-  provide an appropriate value (e.g. '-#{previousShortArgName} value')."
+  throw new Error previousArgErrMsg("-#{previousShortArgName}")
+
+if previousLongArgName?
+  throw new Error previousArgErrMsg("--#{previousLongArgName}")
 
 console.log 'process.argv:'
 console.log process.argv
@@ -73,3 +106,7 @@ console.log 'args:'
 console.log args
 console.log 'kwargs:'
 console.log kwargs
+console.log 'shortSwitches:'
+console.log shortSwitches
+console.log 'longSwitches:'
+console.log longSwitches
