@@ -12,19 +12,6 @@ COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*
 
 ###
 
-argv = process.argv[2..]
-
-Arguments = [
-  'asdf'
-  'bbbc'
-  'wwer'
-]
-
-Switches = [
-  'verbose'
-  'quiet'
-]
-
 class OverlappingShortFormKeywordArgsError extends Error
   constructor: (argSetDescription, argArr, firstLong, secondLong) ->
     shortArg = firstLong[0]
@@ -35,30 +22,6 @@ class OverlappingShortFormKeywordArgsError extends Error
     (e.g. '--#{firstLong}') to form the short-form of the argument
     '-#{shortArg}', so '--#{firstLong}' and '--#{secondLong}' cannot be used
     together. This is a bug.\n\nThe full array is: #{JSON.stringify(argArr)}."
-
-hitShortKwargs = new Map
-for arg in Arguments
-  shortArg = arg[0]
-  prevShort = hitShortKwargs.get(shortArg)
-  if prevShort?
-    throw new OverlappingShortFormKeywordArgsError 'Arguments', Arguments, prevShort, arg
-  else
-    hitShortKwargs.set(shortArg, arg)
-
-hitShortSwitches = new Map
-for arg in Switches
-  shortSwitch = arg[0]
-  prevShortSwitch = hitShortSwitches.get(shortSwitch)
-  if prevShortSwitch?
-    throw new OverlappingShortFormKeywordArgsError 'Switches', Switches, prevShortSwitch, arg
-  else
-    hitShortSwitches.set(shortSwitch, arg)
-
-userShortSwitches = new Set hitShortSwitches.keys()
-userLongSwitches = new Set hitShortSwitches.values()
-
-shortArgToken = '[a-zA-Z]'
-longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
 class CombinedShortOptionsValueError extends Error
   constructor: (combinedNoDash, erroneousArg) ->
@@ -78,7 +41,31 @@ class PreviousArgNoValueError extends Error
     value'). If you meant to use this option, please provide an appropriate
     value."
 
-parse = (argv) ->
+shortArgToken = '[a-zA-Z]'
+longArgToken = '[a-zA-Z][a-zA-Z_-]*'
+
+parse = (argv, kwargs, switches) ->
+  hitShortKwargs = new Map
+  for arg in kwargs
+    shortArg = arg[0]
+    prevShort = hitShortKwargs.get(shortArg)
+    if prevShort?
+      throw new OverlappingShortFormKeywordArgsError 'Arguments', kwargs, prevShort, arg
+    else
+      hitShortKwargs.set(shortArg, arg)
+
+  hitShortSwitches = new Map
+  for arg in switches
+    shortSwitch = arg[0]
+    prevShortSwitch = hitShortSwitches.get(shortSwitch)
+    if prevShortSwitch?
+      throw new OverlappingShortFormKeywordArgsError 'Switches', switches, prevShortSwitch, arg
+    else
+      hitShortSwitches.set(shortSwitch, arg)
+
+  userShortSwitches = new Set hitShortSwitches.keys()
+  userLongSwitches = new Set hitShortSwitches.values()
+
   args = []
   kwargs = {}
   shortSwitches = []
@@ -146,4 +133,18 @@ parse = (argv) ->
 
   {args, kwargs, shortSwitches, longSwitches}
 
-console.log parse(argv)
+
+Arguments = [
+  'asdf'
+  'bbbc'
+  'wwer'
+]
+
+Switches = [
+  'verbose'
+  'quiet'
+]
+
+console.log parse(process.argv[2..], Arguments, Switches)
+
+module.exports = {parse}
