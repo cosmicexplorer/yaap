@@ -44,95 +44,102 @@ class PreviousArgNoValueError extends Error
 shortArgToken = '[a-zA-Z]'
 longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
-parse = (argv, kwargs, switches) ->
-  hitShortKwargs = new Map
-  for arg in kwargs
-    shortArg = arg[0]
-    prevShort = hitShortKwargs.get(shortArg)
-    if prevShort?
-      throw new OverlappingShortFormKeywordArgsError 'Arguments', kwargs, prevShort, arg
-    else
-      hitShortKwargs.set(shortArg, arg)
+class ArgumentParser
+  constructor: (kwargspec, switchspec) ->
+    @shortKwargMap = new Map
+    for arg in kwargspec
+      shortArg = arg[0]
+      prevShort = @shortKwargMap.get(shortArg)
+      if prevShort?
+        throw new OverlappingShortFormKeywordArgsError 'Arguments', kwargspec, prevShort, arg
+      else
+        @shortKwargMap.set(shortArg, arg)
 
-  hitShortSwitches = new Map
-  for arg in switches
-    shortSwitch = arg[0]
-    prevShortSwitch = hitShortSwitches.get(shortSwitch)
-    if prevShortSwitch?
-      throw new OverlappingShortFormKeywordArgsError 'Switches', switches, prevShortSwitch, arg
-    else
-      hitShortSwitches.set(shortSwitch, arg)
+    @shortSwitchMap = new Map
+    for arg in switchspec
+      shortSwitch = arg[0]
+      prevShortSwitch = @shortSwitchMap.get(shortSwitch)
+      if prevShortSwitch?
+        throw new OverlappingShortFormKeywordArgsError 'Switches', switchspec, prevShortSwitch, arg
+      else
+        @shortSwitchMap.set(shortSwitch, arg)
 
-  userShortSwitches = new Set hitShortSwitches.keys()
-  userLongSwitches = new Set hitShortSwitches.values()
+    @longSwitchSet = new Set @shortSwitchMap.values()
 
-  args = []
-  kwargs = {}
-  shortSwitches = []
-  longSwitches = []
+  parse: (argv) ->
+    args = []
+    kwargs = {}
+    switches = []
 
-  previousLongArgName = null
-  previousShortArgName = null
-  for arg, i in argv
-    if previousShortArgName?
+    # prev long/short args are kept separate so we can make error messages
+    # specific to the argument actually used on the command line -- there may be
+    # a better way to do this
+    previousLongArgName = null
+    previousShortArgName = null
+    for arg, i in argv
+      if previousShortArgName?
+        if arg is '--'
+          throw new PreviousArgNoValueError "-#{previousShortArgName}"
+        longForm = @shortKwargMap.get previousShortArgName
+        kwargs[longForm] = arg
+        previousShortArgName = null
+        continue
+
+      if previousLongArgName?
+        if arg is '--'
+          throw new PreviousArgNoValueError "--#{previousLongArgName}"
+        kwargs[previousLongArgName] = arg
+        previousLongArgName = null
+        continue
+
+      longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
+      if longArgWithValue?
+        [_, argName, argValue] = longArgWithValue
+        kwargs[argName] = argValue
+        continue
+
+      longArg = arg.match ///^--(#{longArgToken})$///
+      if longArg?
+        [_, argName] = longArg
+        if @longSwitchSet.has(argName)
+          switches.push argName
+        else
+          previousLongArgName = argName
+        continue
+
+      shortArg = arg.match ///^-((?:#{shortArgToken})+)$///
+      if shortArg?
+        [_, shortArguments] = shortArg
+        [switchArgs..., maybeSwitchArg] = shortArguments.split ''
+
+        for shortArgName in switchArgs
+          longForm = @shortSwitchMap.get shortArgName
+          if longForm?
+            switches.push shortArgName
+          else
+            throw new CombinedShortOptionsValueError shortArguments, shortArgName
+
+        maybeSwitchLong = @shortSwitchMap.get maybeSwitchArg
+        if maybeSwitchLong?
+          switches.push maybeSwitchLong
+        else
+          previousShortArgName = maybeSwitchArg
+        continue
+
       if arg is '--'
-        throw new PreviousArgNoValueError "-#{previousShortArgName}"
-      kwargs[previousShortArgName] = arg
-      previousShortArgName = null
-      continue
+        args = argv[i+1..]
+        break
+      else
+        args = argv[i..]
+        break
+
+    if previousShortArgName?
+      throw new PreviousArgNoValueError "-#{previousShortArgName}"
 
     if previousLongArgName?
-      if arg is '--'
-        throw new PreviousArgNoValueError "--#{previousLongArgName}"
-      kwargs[previousLongArgName] = arg
-      previousLongArgName = null
-      continue
+      throw new PreviousArgNoValueError "--#{previousLongArgName}"
 
-    longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
-    if longArgWithValue?
-      [_, argName, argValue] = longArgWithValue
-      kwargs[argName] = argValue
-      continue
-
-    longArg = arg.match ///^--(#{longArgToken})$///
-    if longArg?
-      [_, argName] = longArg
-      if userLongSwitches.has(argName)
-        longSwitches.push argName
-      else
-        previousLongArgName = argName
-      continue
-
-    shortArg = arg.match ///^-((?:#{shortArgToken})+)$///
-    if shortArg?
-      [_, shortArguments] = shortArg
-      [switchArgs..., maybeSwitchArg] = shortArguments.split ''
-      for argName in switchArgs
-        if userShortSwitches.has argName
-          shortSwitches.push argName
-        else
-          throw new CombinedShortOptionsValueError shortArguments, argName
-      if userShortSwitches.has maybeSwitchArg
-        shortSwitches.push maybeSwitchArg
-      else
-        previousShortArgName = maybeSwitchArg
-      continue
-
-    if arg is '--'
-      args = argv[i+1..]
-      break
-    else
-      args = argv[i..]
-      break
-
-  if previousShortArgName?
-    throw new PreviousArgNoValueError "-#{previousShortArgName}"
-
-  if previousLongArgName?
-    throw new PreviousArgNoValueError "--#{previousLongArgName}"
-
-  {args, kwargs, shortSwitches, longSwitches}
-
+    {args, kwargs, switches}
 
 Arguments = [
   'asdf'
@@ -145,6 +152,6 @@ Switches = [
   'quiet'
 ]
 
-console.log parse(process.argv[2..], Arguments, Switches)
+console.log new ArgumentParser(Arguments, Switches).parse(process.argv[2..])
 
-module.exports = {parse}
+module.exports = {ArgumentParser}
