@@ -12,6 +12,8 @@ COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*
 
 ###
 
+argv = process.argv[2..]
+
 user_short_switches = new Set [
   'a'
   'c'
@@ -29,35 +31,49 @@ longSwitches = []
 previousLongArgName = null
 previousShortArgName = null
 
-argv = process.argv[2..]
+shortArgToken = '[a-zA-Z]'
+longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
-shortToken = '[a-zA-Z]'
-longToken = '[a-zA-Z][a-zA-Z_-]*'
+class CombinedShortOptionsValueError extends Error
+  constructor: (combinedNoDash, erroneousArg) ->
+    argsDashed = combinedNoDash.split('').map (x) -> "-#{x}"
 
-throwOnAccidentalOption = no
+    super "The argument '-#{combinedNoDash}' is interpreted as the consecutive
+    arguments #{argsDashed}. The switch '-#{erroneousArg}' is in the middle of
+    the interpreted arguments, but that argument is not a switch. It requires a
+    value (e.g. '-#{erroneousArg} value'). Move '#{erroneousArg}' to the end of
+    the combined arguments, or separate it into a separate '-#{erroneousArg}'
+    short keyword argument."
 
-accidentalArgErrMsg = (argWithDashes) ->
-  "The argument '#{argWithDashes}' looks like a keyword argument, but isn't
-  recognized "
+class PreviousArgNoValueError extends Error
+  constructor: (argWithDashes) ->
+    super "The last keyword argument '#{argWithDashes}' is not a switch. It
+    requires a value after it in the argument list (e.g. '#{argWithDashes}
+    value'). If you meant to use this option, please provide an appropriate
+    value."
 
 for arg, i in argv
   if previousShortArgName?
+    if arg is '--'
+      throw new PreviousArgNoValueError "-#{previousShortArgName}"
     kwargs[previousShortArgName] = arg
     previousShortArgName = null
     continue
 
   if previousLongArgName?
+    if arg is '--'
+      throw new PreviousArgNoValueError "--#{previousLongArgName}"
     kwargs[previousLongArgName] = arg
     previousLongArgName = null
     continue
 
-  longArgWithValue = arg.match ///^--(#{longToken})=(.*)$///
+  longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
   if longArgWithValue?
     [_, argName, argValue] = longArgWithValue
     kwargs[argName] = argValue
     continue
 
-  longArg = arg.match ///^--(#{longToken})$///
+  longArg = arg.match ///^--(#{longArgToken})$///
   if longArg?
     [_, argName] = longArg
     if user_long_switches.has(argName)
@@ -66,21 +82,20 @@ for arg, i in argv
       previousLongArgName = argName
     continue
 
-  # TODO: split combined short args (e.g. -uno)
-  shortArg = arg.match ///^-(#{shortToken})$///
+  shortArg = arg.match ///^-((?:#{shortArgToken})+)$///
   if shortArg?
-    [_, argName] = shortArg
-    console.log "argName: #{argName}"
-    if user_short_switches.has argName
-      shortSwitches.push argName
+    [_, shortArguments] = shortArg
+    [switchArgs..., maybeSwitchArg] = shortArguments.split ''
+    for argName in switchArgs
+      if user_short_switches.has argName
+        shortSwitches.push argName
+      else
+        throw new CombinedShortOptionsValueError shortArguments, argName
+    if user_short_switches.has maybeSwitchArg
+      shortSwitches.push maybeSwitchArg
     else
-      previousShortArgName = argName
+      previousShortArgName = maybeSwitchArg
     continue
-
-  accidentalArg = arg.match ///^-///
-  if accidentalArg?
-    # TODO: finish this -- does this make sense if we split combined short args?
-    # throw new Error
 
   if arg is '--'
     args = argv[i+1..]
@@ -89,16 +104,13 @@ for arg, i in argv
     args = argv[i..]
     break
 
-previousArgErrMsg = (argWithDashes) ->
-  "The last argument '#{argWithDashes}' requires a value after it in the
-  argument list. If you meant to use this option, please provide an appropriate
-  value (e.g. '#{argWithDashes} value')."
-
 if previousShortArgName?
-  throw new Error previousArgErrMsg("-#{previousShortArgName}")
+  throw new PreviousArgNoValueError "-#{previousShortArgName}"
 
 if previousLongArgName?
-  throw new Error previousArgErrMsg("--#{previousLongArgName}")
+  throw new PreviousArgNoValueError "--#{previousLongArgName}"
+
+
 
 console.log 'process.argv:'
 console.log process.argv
