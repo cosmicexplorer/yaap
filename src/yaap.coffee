@@ -41,68 +41,126 @@ class PreviousArgNoValueError extends Error
     value'). If you meant to use this option, please provide an appropriate
     value."
 
+class ResolveArgNameError extends Error
+  @argTypeDescriptionMap:
+    kwarg: 'command-line keyword argument'
+    switch: 'command-line switch'
+
+  constructor: (name, type, {short = no}) ->
+    desc = ResolveArgNameError.argTypeDescriptionMap[type]
+    if short
+      dashedArg = "-#{name}"
+      shortMsg = "short-form"
+    else
+      dashedArg = "--#{name}"
+      shortMsg = "long-form"
+    super "This program does not recognize any #{shortMsg} argument
+    '#{dashedArg}' of type '#{desc}'."
+
 shortArgToken = '[a-zA-Z]'
 longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
 class ArgumentParser
   constructor: (kwargspec, switchspec) ->
-    @shortKwargMap = new Map
+    @argspec =
+      kwarg:
+        shortMap: new Map
+        longSet: null
+      switch:
+        shortMap: new Map
+        longSet: null
+
+    kwargConfig = @argspec.kwarg
     for arg in kwargspec
       shortArg = arg[0]
-      prevShort = @shortKwargMap.get(shortArg)
+      prevShort = kwargConfig.shortMap.get(shortArg)
       if prevShort?
         throw new OverlappingShortFormKeywordArgsError 'Arguments', kwargspec, prevShort, arg
       else
-        @shortKwargMap.set(shortArg, arg)
+        kwargConfig.shortMap.set(shortArg, arg)
 
-    @shortSwitchMap = new Map
+    switchConfig = @argspec.switch
     for arg in switchspec
       shortSwitch = arg[0]
-      prevShortSwitch = @shortSwitchMap.get(shortSwitch)
+      prevShortSwitch = switchConfig.shortMap.get(shortSwitch)
       if prevShortSwitch?
         throw new OverlappingShortFormKeywordArgsError 'Switches', switchspec, prevShortSwitch, arg
       else
-        @shortSwitchMap.set(shortSwitch, arg)
+        switchConfig.shortMap.set(shortSwitch, arg)
 
-    @longSwitchSet = new Set @shortSwitchMap.values()
+    kwargConfig.longSet = new Set kwargConfig.shortMap.values()
+    switchConfig.longSet = new Set switchConfig.shortMap.values()
+
+  _resolve: (name, type, {short = no} = {}) ->
+    config = @argspec[type]
+    if short
+      unless config.shortMap.has name
+        throw new ResolveArgNameError name, type, {short}
+      config.shortMap.get name
+    else
+      unless config.longSet.has name
+        throw new ResolveArgNameError name, type, {short}
+      name
+
+  _insertKwarg: (annotated, kwargs, argName, argValue, {short = no} = {}) ->
+    resolvedArgName = @_resolve argName, 'kwarg', {short}
+    kwargs[resolvedArgName] = argValue
+    annotated.push {
+      type: 'kwarg',
+      short,
+      name: argName,
+      resolvedName: resolvedArgName,
+      value: argValue,
+    }
+
+  _insertSwitch: (annotated, switches, switchName, {short = no} = {}) ->
+    resolvedSwitchName = @_resolve switchName, 'switch', {short}
+    switches.push resolvedSwitchName
+    annotated.push {
+      type: 'switch',
+      short,
+      name: switchName,
+      resolvedName: resolvedSwitchName,
+    }
 
   parse: (argv) ->
     args = []
     kwargs = {}
     switches = []
+    # array of json objects corresponding to parsed entities from argv
+    annotated = []
 
     # prev long/short args are kept separate so we can make error messages
     # specific to the argument actually used on the command line -- there may be
-    # a better way to do this
+    # a better way to do this, and that's ok
     previousLongArgName = null
     previousShortArgName = null
     for arg, i in argv
       if previousShortArgName?
         if arg is '--'
           throw new PreviousArgNoValueError "-#{previousShortArgName}"
-        longForm = @shortKwargMap.get previousShortArgName
-        kwargs[longForm] = arg
+        @_insertKwarg annotated, kwargs, previousShortArgName, arg, {short: yes}
         previousShortArgName = null
         continue
 
       if previousLongArgName?
         if arg is '--'
           throw new PreviousArgNoValueError "--#{previousLongArgName}"
-        kwargs[previousLongArgName] = arg
+        @_insertKwarg annotated, kwargs, previousLongArgName, arg
         previousLongArgName = null
         continue
 
       longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
       if longArgWithValue?
         [_, argName, argValue] = longArgWithValue
-        kwargs[argName] = argValue
+        @_insertKwarg annotated, kwargs, argName, argValue
         continue
 
       longArg = arg.match ///^--(#{longArgToken})$///
       if longArg?
         [_, argName] = longArg
-        if @longSwitchSet.has(argName)
-          switches.push argName
+        if @argspec.switch.longSet.has(argName)
+          @_insertSwitch annotated, switches, argName
         else
           previousLongArgName = argName
         continue
@@ -113,15 +171,13 @@ class ArgumentParser
         [switchArgs..., maybeSwitchArg] = shortArguments.split ''
 
         for shortArgName in switchArgs
-          longForm = @shortSwitchMap.get shortArgName
-          if longForm?
-            switches.push shortArgName
+          if @argspec.switch.shortMap.has shortArgName
+            @_insertSwitch annotated, switches, shortArgName, {short: yes}
           else
             throw new CombinedShortOptionsValueError shortArguments, shortArgName
 
-        maybeSwitchLong = @shortSwitchMap.get maybeSwitchArg
-        if maybeSwitchLong?
-          switches.push maybeSwitchLong
+        if @argspec.switch.shortMap.has maybeSwitchArg
+          @_insertSwitch annotated, switches, maybeSwitchArg, {short: yes}
         else
           previousShortArgName = maybeSwitchArg
         continue
@@ -139,7 +195,7 @@ class ArgumentParser
     if previousLongArgName?
       throw new PreviousArgNoValueError "--#{previousLongArgName}"
 
-    {args, kwargs, switches}
+    {args, kwargs, switches, annotated}
 
 Arguments = [
   'asdf'
