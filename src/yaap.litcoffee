@@ -138,7 +138,7 @@ complexity.
 
 `annotated` is an array of json objects corresponding to parsed entities from `argv`. This is the hook by which a user can get into some more intense argument parsing with reflection/etc.
 
-**TODO: make the checking of maps and sets separate from the argument parsing, and make it optional to use (e.g. so people can handle unregistered arguments). Make it easy to get the (slimmer) benefits.**
+**TODO: make the checking of maps and sets separate from the argument parsing, and make it optional to use (e.g. so people can handle unregistered arguments). Make it easy to get the (slimmer) benefits. Make it work *with* registered options too.**
 
         annotated = []
 
