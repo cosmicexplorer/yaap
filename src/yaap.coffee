@@ -57,14 +57,6 @@ for arg in Switches
 userShortSwitches = new Set hitShortSwitches.keys()
 userLongSwitches = new Set hitShortSwitches.values()
 
-args = []
-kwargs = {}
-shortSwitches = []
-longSwitches = []
-
-previousLongArgName = null
-previousShortArgName = null
-
 shortArgToken = '[a-zA-Z]'
 longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
@@ -86,73 +78,72 @@ class PreviousArgNoValueError extends Error
     value'). If you meant to use this option, please provide an appropriate
     value."
 
-for arg, i in argv
-  if previousShortArgName?
+parse = (argv) ->
+  args = []
+  kwargs = {}
+  shortSwitches = []
+  longSwitches = []
+
+  previousLongArgName = null
+  previousShortArgName = null
+  for arg, i in argv
+    if previousShortArgName?
+      if arg is '--'
+        throw new PreviousArgNoValueError "-#{previousShortArgName}"
+      kwargs[previousShortArgName] = arg
+      previousShortArgName = null
+      continue
+
+    if previousLongArgName?
+      if arg is '--'
+        throw new PreviousArgNoValueError "--#{previousLongArgName}"
+      kwargs[previousLongArgName] = arg
+      previousLongArgName = null
+      continue
+
+    longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
+    if longArgWithValue?
+      [_, argName, argValue] = longArgWithValue
+      kwargs[argName] = argValue
+      continue
+
+    longArg = arg.match ///^--(#{longArgToken})$///
+    if longArg?
+      [_, argName] = longArg
+      if userLongSwitches.has(argName)
+        longSwitches.push argName
+      else
+        previousLongArgName = argName
+      continue
+
+    shortArg = arg.match ///^-((?:#{shortArgToken})+)$///
+    if shortArg?
+      [_, shortArguments] = shortArg
+      [switchArgs..., maybeSwitchArg] = shortArguments.split ''
+      for argName in switchArgs
+        if userShortSwitches.has argName
+          shortSwitches.push argName
+        else
+          throw new CombinedShortOptionsValueError shortArguments, argName
+      if userShortSwitches.has maybeSwitchArg
+        shortSwitches.push maybeSwitchArg
+      else
+        previousShortArgName = maybeSwitchArg
+      continue
+
     if arg is '--'
-      throw new PreviousArgNoValueError "-#{previousShortArgName}"
-    kwargs[previousShortArgName] = arg
-    previousShortArgName = null
-    continue
+      args = argv[i+1..]
+      break
+    else
+      args = argv[i..]
+      break
+
+  if previousShortArgName?
+    throw new PreviousArgNoValueError "-#{previousShortArgName}"
 
   if previousLongArgName?
-    if arg is '--'
-      throw new PreviousArgNoValueError "--#{previousLongArgName}"
-    kwargs[previousLongArgName] = arg
-    previousLongArgName = null
-    continue
+    throw new PreviousArgNoValueError "--#{previousLongArgName}"
 
-  longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
-  if longArgWithValue?
-    [_, argName, argValue] = longArgWithValue
-    kwargs[argName] = argValue
-    continue
+  {args, kwargs, shortSwitches, longSwitches}
 
-  longArg = arg.match ///^--(#{longArgToken})$///
-  if longArg?
-    [_, argName] = longArg
-    if userLongSwitches.has(argName)
-      longSwitches.push argName
-    else
-      previousLongArgName = argName
-    continue
-
-  shortArg = arg.match ///^-((?:#{shortArgToken})+)$///
-  if shortArg?
-    [_, shortArguments] = shortArg
-    [switchArgs..., maybeSwitchArg] = shortArguments.split ''
-    for argName in switchArgs
-      if userShortSwitches.has argName
-        shortSwitches.push argName
-      else
-        throw new CombinedShortOptionsValueError shortArguments, argName
-    if userShortSwitches.has maybeSwitchArg
-      shortSwitches.push maybeSwitchArg
-    else
-      previousShortArgName = maybeSwitchArg
-    continue
-
-  if arg is '--'
-    args = argv[i+1..]
-    break
-  else
-    args = argv[i..]
-    break
-
-if previousShortArgName?
-  throw new PreviousArgNoValueError "-#{previousShortArgName}"
-
-if previousLongArgName?
-  throw new PreviousArgNoValueError "--#{previousLongArgName}"
-
-
-
-console.log 'process.argv:'
-console.log process.argv
-console.log 'args:'
-console.log args
-console.log 'kwargs:'
-console.log kwargs
-console.log 'shortSwitches:'
-console.log shortSwitches
-console.log 'longSwitches:'
-console.log longSwitches
+console.log parse(argv)
