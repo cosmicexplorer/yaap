@@ -1,13 +1,13 @@
 # wow
 
-arg list -> (dict, list)
+> arg list -> (dict, list)
 
 - assume invoked as: `COMMAND kwargs [--] args`
-
-- kwargs is a Map[String -> String], args is a List[String]
+    - to be more specific: `COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*`
+- kwargs is a str/str map, args is a str list
 - later options override earlier options
 
-`COMMAND (--arg=value|--arg value|-a value)* (--)? (value)*`
+a moment of silence
 
     class OverlappingShortFormKeywordArgsError extends Error
       constructor: (argSetDescription, argArr, firstLong, secondLong) ->
@@ -23,9 +23,10 @@ arg list -> (dict, list)
     class CombinedShortOptionsValueError extends Error
       constructor: (combinedNoDash, erroneousArg) ->
         argsDashed = combinedNoDash.split('').map (x) -> "-#{x}"
+        argsPrinted = JSON.stringify argsDashed
 
         super "The argument '-#{combinedNoDash}' is interpreted as the consecutive
-        arguments #{argsDashed}. The switch '-#{erroneousArg}' is in the middle of
+        arguments #{argsPrinted}. The switch '-#{erroneousArg}' is in the middle of
         the interpreted arguments, but that argument is not a switch. It requires a
         value (e.g. '-#{erroneousArg} value'). Move '#{erroneousArg}' to the end of
         the combined arguments, or separate it into a separate '-#{erroneousArg}'
@@ -38,27 +39,17 @@ arg list -> (dict, list)
         value'). If you meant to use this option, please provide an appropriate
         value."
 
-    class ResolveArgNameError extends Error
-      @argTypeDescriptionMap:
-        kwarg: 'command-line keyword argument'
-        switch: 'command-line switch'
-
-      constructor: (name, type, {short = no}) ->
-        desc = ResolveArgNameError.argTypeDescriptionMap[type]
-        if short
-          dashedArg = "-#{name}"
-          shortMsg = "short-form"
-        else
-          dashedArg = "--#{name}"
-          shortMsg = "long-form"
-        super "This program does not recognize any #{shortMsg} argument
-        '#{dashedArg}' of type '#{desc}'."
+    class ResolveArgNamesError extends Error
+      constructor: (names) ->
+        namesPrinted = JSON.stringify names
+        super "The command line contained some arguments this program does not
+        recognize. The invalid arguments were: #{namesPrinted}."
 
     shortArgToken = '[a-zA-Z]'
     longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
     class ArgumentParser
-      constructor: (kwargspec, switchspec) ->
+      constructor: (@kwargspec, @switchspec, {@throwOnUnregistered = yes} = {}) ->
         @argspec =
           kwarg:
             shortMap: new Map
@@ -68,57 +59,43 @@ arg list -> (dict, list)
             longSet: null
 
         kwargConfig = @argspec.kwarg
-        for arg in kwargspec
+        for arg in @kwargspec
           shortArg = arg[0]
-          prevShort = kwargConfig.shortMap.get(shortArg)
+          prevShort = kwargConfig.shortMap.get shortArg
           if prevShort?
-            throw new OverlappingShortFormKeywordArgsError 'Arguments', kwargspec, prevShort, arg
+            throw new OverlappingShortFormKeywordArgsError 'Arguments', @kwargspec, prevShort, arg
           else
-            kwargConfig.shortMap.set(shortArg, arg)
+            kwargConfig.shortMap.set shortArg, arg
 
         switchConfig = @argspec.switch
-        for arg in switchspec
+        for arg in @switchspec
           shortSwitch = arg[0]
-          prevShortSwitch = switchConfig.shortMap.get(shortSwitch)
+          prevShortSwitch = switchConfig.shortMap.get shortSwitch
           if prevShortSwitch?
-            throw new OverlappingShortFormKeywordArgsError 'Switches', switchspec, prevShortSwitch, arg
+            throw new OverlappingShortFormKeywordArgsError 'Switches', @switchspec, prevShortSwitch, arg
           else
-            switchConfig.shortMap.set(shortSwitch, arg)
+            switchConfig.shortMap.set shortSwitch, arg
 
         kwargConfig.longSet = new Set kwargConfig.shortMap.values()
         switchConfig.longSet = new Set switchConfig.shortMap.values()
 
-      _resolve: (name, type, {short = no} = {}) ->
-        config = @argspec[type]
-        if short
-          unless config.shortMap.has name
-            throw new ResolveArgNameError name, type, {short}
-          config.shortMap.get name
-        else
-          unless config.longSet.has name
-            throw new ResolveArgNameError name, type, {short}
-          name
+      _insertKwarg: (annotated, kwargs, name, value, {short = no} = {}) ->
+        kwargConfig = @argspec.kwarg
+        resolvedName = switch
+          when short then kwargConfig.shortMap.get name
+          when kwargConfig.longSet.has name then name
+          else null
+        kwargs[resolvedName] = value if resolvedName?
+        annotated.push {type: 'kwarg', short, name, resolvedName, value}
 
-      _insertKwarg: (annotated, kwargs, argName, argValue, {short = no} = {}) ->
-        resolvedArgName = @_resolve argName, 'kwarg', {short}
-        kwargs[resolvedArgName] = argValue
-        annotated.push {
-          type: 'kwarg',
-          short,
-          name: argName,
-          resolvedName: resolvedArgName,
-          value: argValue,
-        }
-
-      _insertSwitch: (annotated, switches, switchName, {short = no} = {}) ->
-        resolvedSwitchName = @_resolve switchName, 'switch', {short}
-        switches.push resolvedSwitchName
-        annotated.push {
-          type: 'switch',
-          short,
-          name: switchName,
-          resolvedName: resolvedSwitchName,
-        }
+      _insertSwitch: (annotated, switches, name, {short = no} = {}) ->
+        switchConfig = @argspec.switch
+        resolvedName = switch
+          when short then switchConfig.shortMap.get name
+          when switchConfig.longSet.has name then name
+          else null
+        switches.push resolvedName if resolvedName?
+        annotated.push {type: 'switch', short, name, resolvedName}
 
 We require command lines to fit the following pseudo-EBNF grammar:
 
@@ -138,7 +115,7 @@ complexity.
 
 `annotated` is an array of json objects corresponding to parsed entities from `argv`. This is the hook by which a user can get into some more intense argument parsing with reflection/etc.
 
-**TODO: make the checking of maps and sets separate from the argument parsing, and make it optional to use (e.g. so people can handle unregistered arguments). Make it easy to get the (slimmer) benefits. Make it work *with* registered options too.**
+TODO(done): make the checking of maps and sets separate from the argument parsing, and make it optional to use (e.g. so people can handle unregistered arguments). Make it easy to get the benefits. Make it work *with* registered options too.
 
         annotated = []
 
@@ -208,6 +185,15 @@ used on the command line -- there may be a better way to do this, and that's ok.
         if previousLongArgName?
           throw new PreviousArgNoValueError "--#{previousLongArgName}"
 
+TODO(done): let's only throw after parsing all of the arguments -- we impose a specific structure on the argv our programs can handle so that we can get all the arguments without worrying about interpreting them too much, and then worry about validation.
+
+        if @throwOnUnregistered
+          unregisteredNames = annotated
+            .filter(({resolvedName}) -> not resolvedName?)
+            .map(({name}) -> name)
+          if unregisteredNames.length > 0
+            throw new ResolveArgNamesError unregisteredNames
+
         {args, kwargs, switches, annotated}
 
 Example usage.
@@ -223,6 +209,8 @@ Example usage.
       'quiet'
     ]
 
-    console.log new ArgumentParser(Arguments, Switches).parse(process.argv[2..])
+    console.log new ArgumentParser(Arguments, Switches, {
+      throwOnUnregistered: no,
+    }).parse(process.argv[2..])
 
     module.exports = {ArgumentParser}
