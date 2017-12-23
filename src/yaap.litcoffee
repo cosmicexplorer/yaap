@@ -49,7 +49,11 @@ a moment of silence
     longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
     class ArgumentParser
-      constructor: (@kwargspec, @switchspec, {@throwOnUnregistered = yes} = {}) ->
+      constructor: (@kwargspec, @switchspec, opts = {}) ->
+        {
+          @throwOnUnregistered = yes
+          @intermixArgsKwargs = yes
+        } = opts
         @argspec =
           kwarg:
             shortMap: new Map
@@ -96,6 +100,10 @@ a moment of silence
           else null
         switches.push resolvedName if resolvedName?
         annotated.push {type: 'switch', short, name, resolvedName}
+
+      _insertArg: (annotated, args, value) ->
+        args.push value
+        annotated.push {type: 'arg', value}
 
 We require command lines to fit the following pseudo-EBNF grammar:
 
@@ -172,11 +180,18 @@ used on the command line -- there may be a better way to do this, and that's ok.
               previousShortArgName = maybeSwitchArg
             continue
 
+FIXME(fixed): it is the easiest thing in the world to only stop parsing args after a `--`, and to otherwise accept intermixed positional and keyword args. "CoffeeScript-style" argument parsing which enforces that one positional argument means the rest are also positional is better (although Pants is good too), but shouldn't be required.
+
           if arg is '--'
-            args = argv[i+1..]
+            argsAfterDashes = argv[i+1..]
+            @_insertArg annotated, args, val for val in argsAfterDashes
             break
+          else if @intermixArgsKwargs
+            @_insertArg annotated, args, arg
+            continue
           else
-            args = argv[i..]
+            argsIncludingCurrent = argv[i..]
+            @_insertArg annotated, args, val for val in argsIncludingCurrent
             break
 
         if previousShortArgName?
@@ -210,7 +225,8 @@ Example usage.
     ]
 
     console.log new ArgumentParser(Arguments, Switches, {
-      throwOnUnregistered: no,
+      throwOnUnregistered: no
+      intermixArgsKwargs: yes
     }).parse(process.argv[2..])
 
     module.exports = {ArgumentParser}
