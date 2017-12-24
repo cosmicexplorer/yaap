@@ -1,9 +1,9 @@
-COFFEE_DIR := src
-COFFEE_SRC := $(wildcard $(COFFEE_DIR)/*.coffee)
-JS_OBJ := $(patsubst %.coffee,%.js,$(COFFEE_SRC))
+LITCOFFEE_SRC_DIR := src
+LITCOFFEE_SRC := $(wildcard $(LITCOFFEE_SRC_DIR)/*.litcoffee)
+JS_OBJ := $(patsubst %.litcoffee,%.js,$(LITCOFFEE_SRC))
 
 TEST_DIR := test
-TEST_COFFEE_SRC := $(wildcard $(TEST_DIR)/*.coffee)
+TEST_SRC := $(wildcard $(TEST_DIR)/*.coffee)
 TEST_JS_OBJ := $(patsubst %.coffee,%.js,$(TEST_SRC))
 
 NPM_DIR := node_modules
@@ -12,7 +12,7 @@ COFFEE_CC := $(NPM_BIN_DIR)/coffee
 MOCHA_RUN := $(NPM_BIN_DIR)/mocha
 NPM_BINS := $(COFFEE_CC) $(MOCHA_RUN)
 
-.PHONY: all clean check
+.PHONY: all clean test
 
 all: $(JS_OBJ)
 
@@ -21,10 +21,13 @@ clean:
 	rm -f $(JS_OBJ)
 	rm -rf $(NPM_DIR)
 
-check: all $(TEST_JS_OBJ) $(MOCHA_RUN)
+test: all $(TEST_JS_OBJ) $(MOCHA_RUN)
 	$(MOCHA_RUN)
 
 %.js: %.coffee $(COFFEE_CC)
+	$(COFFEE_CC) -bc --no-header $<
+
+%.js: %.litcoffee $(COFFEE_CC)
 	$(COFFEE_CC) -bc --no-header $<
 
 $(NPM_BINS):
