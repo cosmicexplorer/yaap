@@ -1,9 +1,8 @@
 assert = require 'assert'
 should = require 'should'
 
-{ArgumentParser} = require '..'
+f = -> 42
 
-it 'should throw on overlapping registered keywords', ->
-  
-  f().should.be.Number().and.equal(42)
+it 'should work', ->
+  f.should.be.Number().and.equal(42)
   f.should.not.throw()

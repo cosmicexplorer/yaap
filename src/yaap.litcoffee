@@ -9,8 +9,6 @@
 
 a moment of silence
 
-    class Invalid
-
     class OverlappingShortFormKeywordArgsError extends Error
       constructor: (argSetDescription, argArr, firstLong, secondLong) ->
         shortArg = firstLong[0]
@@ -50,56 +48,62 @@ a moment of silence
     shortArgToken = '[a-zA-Z]'
     longArgToken = '[a-zA-Z][a-zA-Z_-]*'
 
-    class ArgumentState
-      constructor: (@argSpec) ->
-        @kwargs = new Map
-        @switches = []
-        @annotated = []
-
-      insert: (parsedType, name, {short, value}) ->
-        registeredName = if short then @argSpec.shortMap.get name else name
-        registeredType = @argSpec.typeMap.get registeredName
-
-        switch registeredType
-          when 'keyword' then @kwargs.set registeredName, value
-          when 'switch' then @switches.push registeredName
-
     class ArgumentParser
-      @isString: (x) -> Object::toString.call x is '[object String]'
-
-      @buildArgspec: (optionRegistrations) ->
-        typeMap = new Map
-        shortMap = new Map
-        for argName, argType of optionRegistrations
-          if not @isString argName or argName.length <= 1
-            # ?
-          if not @isString argType or argType not in @optionTypes
-            # ?
-
-          prevType = typeMap.get argName
-          if prevType?
-            # ?
-          typeMap.set argName, argType
-
-          shortName = argName[0]
-          prevLongArgName = shortMap.get shortName
-          if prevLongArgName?
-            # ?
-          shortMap.set shortName, argName
-
-        {typeMap, shortMap}
-
-      constructor: (opts = {}) ->
+      constructor: (@kwargspec, @switchspec, opts = {}) ->
         {
-          optionRegistrations = {}
           @throwOnUnregistered = yes
           @intermixArgsKwargs = yes
         } = opts
+        @argspec =
+          kwarg:
+            shortMap: new Map
+            longSet: null
+          switch:
+            shortMap: new Map
+            longSet: null
 
-        @argspec = ArgumentParser.buildArgspec optionRegistrations
+        kwargConfig = @argspec.kwarg
+        for arg in @kwargspec
+          shortArg = arg[0]
+          prevShort = kwargConfig.shortMap.get shortArg
+          if prevShort?
+            throw new OverlappingShortFormKeywordArgsError 'Arguments', @kwargspec, prevShort, arg
+          else
+            kwargConfig.shortMap.set shortArg, arg
 
+        switchConfig = @argspec.switch
+        for arg in @switchspec
+          shortSwitch = arg[0]
+          prevShortSwitch = switchConfig.shortMap.get shortSwitch
+          if prevShortSwitch?
+            throw new OverlappingShortFormKeywordArgsError 'Switches', @switchspec, prevShortSwitch, arg
+          else
+            switchConfig.shortMap.set shortSwitch, arg
 
-      tryInsertKwarg
+        kwargConfig.longSet = new Set kwargConfig.shortMap.values()
+        switchConfig.longSet = new Set switchConfig.shortMap.values()
+
+      _insertKwarg: (annotated, kwargs, name, value, {short = no} = {}) ->
+        kwargConfig = @argspec.kwarg
+        resolvedName = switch
+          when short then kwargConfig.shortMap.get name
+          when kwargConfig.longSet.has name then name
+          else null
+        kwargs[resolvedName] = value if resolvedName?
+        annotated.push {type: 'kwarg', short, name, resolvedName, value}
+
+      _insertSwitch: (annotated, switches, name, {short = no} = {}) ->
+        switchConfig = @argspec.switch
+        resolvedName = switch
+          when short then switchConfig.shortMap.get name
+          when switchConfig.longSet.has name then name
+          else null
+        switches.push resolvedName if resolvedName?
+        annotated.push {type: 'switch', short, name, resolvedName}
+
+      _insertArg: (annotated, args, value) ->
+        args.push value
+        annotated.push {type: 'arg', value}
 
 We require command lines to fit the following pseudo-EBNF grammar:
 
@@ -113,7 +117,9 @@ quoting for each argument, then parse that, but that's introducing needless
 complexity.
 
       parse: (argv) ->
-        state = new ArgumentState @argspec
+        args = []
+        kwargs = {}
+        switches = []
 
 `annotated` is an array of json objects corresponding to parsed entities from `argv`. This is the hook by which a user can get into some more intense argument parsing with reflection/etc.
 
@@ -131,21 +137,21 @@ used on the command line -- there may be a better way to do this, and that's ok.
           if previousShortArgName?
             if arg is '--'
               throw new PreviousArgNoValueError "-#{previousShortArgName}"
-            state.insert 'keyword', previousShortArgName, {short: yes, value: arg}
+            @_insertKwarg annotated, kwargs, previousShortArgName, arg, {short: yes}
             previousShortArgName = null
             continue
 
           if previousLongArgName?
             if arg is '--'
               throw new PreviousArgNoValueError "--#{previousLongArgName}"
-            state.insert 'keyword', previousLongArgName, {short: no, value: arg}
+            @_insertKwarg annotated, kwargs, previousLongArgName, arg
             previousLongArgName = null
             continue
 
           longArgWithValue = arg.match ///^--(#{longArgToken})=(.*)$///
           if longArgWithValue?
             [_, argName, argValue] = longArgWithValue
-            state.insert 'keyword', argName, {short: no, value: argValue}
+            @_insertKwarg annotated, kwargs, argName, argValue
             continue
 
           longArg = arg.match ///^--(#{longArgToken})$///
